@@ -1,0 +1,75 @@
+{
+  "1000": [
+    "brute force",
+    "constructive algorithms",
+    "data structures",
+    "greedy",
+    "implementation",
+    "math",
+    "number theory",
+    "strings"
+  ],
+  "1100": [
+    "constructive algorithms",
+    "games",
+    "greedy",
+    "implementation",
+    "math",
+    "sortings"
+  ],
+  "1200": [
+    "binary search",
+    "brute force",
+    "constructive algorithms",
+    "dp",
+    "greedy",
+    "implementation",
+    "math",
+    "sortings",
+    "strings"
+  ],
+  "1300": [
+    "binary search",
+    "constructive algorithms",
+    "data structures",
+    "dp",
+    "greedy",
+    "implementation",
+    "math",
+    "sortings",
+    "strings",
+    "two pointers"
+  ],
+  "1400": [
+    "binary search",
+    "constructive algorithms",
+    "data structures",
+    "games",
+    "geometry",
+    "greedy",
+    "implementation",
+    "math",
+    "sortings",
+    "ternary search",
+    "two pointers"
+  ],
+  "800": [
+    "bitmasks",
+    "brute force",
+    "constructive algorithm",
+    "constructive algorithms",
+    "games",
+    "geometry",
+    "greedy",
+    "implementation",
+    "math",
+    "sortings"
+  ],
+  "900": [
+    "brute force",
+    "data structures",
+    "greedy",
+    "implementation",
+    "math"
+  ]
+}

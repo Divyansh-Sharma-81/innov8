@@ -1,0 +1,3 @@
+0.0|4.0|okay let me think about the best approach here
+4.0|8.5|uh maybe i should try the hash map idea first
+8.5|12.3|you know i am almost done just testing quickly

@@ -1,0 +1,109 @@
+{"ts": 1759001343.69975, "type": "asr.finalized", "text": "hello hello", "start_ts": 3.7383139610290526, "end_ts": 4.438313961029053}
+{"ts": 1759001343.7003572, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001343.7003572}}
+{"ts": 1759001343.700649, "type": "asr.finalized", "text": "Hello? Hello?", "start_ts": 3.7383697509765623, "end_ts": 4.4383697509765625}
+{"ts": 1759001345.030554, "type": "asr.finalized", "text": "hello", "start_ts": 5.419130945205689, "end_ts": 5.7691309452056885}
+{"ts": 1759001345.0308921, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001345.0308921}}
+{"ts": 1759001345.047508, "type": "asr.finalized", "text": "Hello.", "start_ts": 5.436071062088013, "end_ts": 5.786071062088013}
+{"ts": 1759001348.562894, "type": "asr.finalized", "text": "can you hear me", "start_ts": 7.900756931304931, "end_ts": 9.300756931304932}
+{"ts": 1759001348.564416, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001348.564416}}
+{"ts": 1759001348.640744, "type": "asr.finalized", "text": "Can you hear me?", "start_ts": 7.979354953765869, "end_ts": 9.37935495376587}
+{"ts": 1759001350.658844, "type": "asr.finalized", "text": "okay", "start_ts": 11.047445917129517, "end_ts": 11.397445917129517}
+{"ts": 1759001350.659936, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001350.659936}}
+{"ts": 1759001350.6794791, "type": "asr.finalized", "text": "Okay?", "start_ts": 11.068082714080811, "end_ts": 11.41808271408081}
+{"ts": 1759001352.842494, "type": "asr.finalized", "text": "let's start", "start_ts": 12.881113815307618, "end_ts": 13.581113815307617}
+{"ts": 1759001352.8430521, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001352.8430521}}
+{"ts": 1759001352.872324, "type": "asr.finalized", "text": "Let's start.", "start_ts": 12.910926866531373, "end_ts": 13.610926866531372}
+{"ts": 1759001354.249547, "type": "asr.finalized", "text": "with this testing", "start_ts": 13.938054990768432, "end_ts": 14.988054990768433}
+{"ts": 1759001354.25021, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001354.25021}}
+{"ts": 1759001354.271708, "type": "asr.finalized", "text": "With this testing.", "start_ts": 13.960269880294799, "end_ts": 15.0102698802948}
+{"ts": 1759001356.9761379, "type": "asr.finalized", "text": "and", "start_ts": 17.364724779129027, "end_ts": 17.71472477912903}
+{"ts": 1759001356.977427, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001356.977427}}
+{"ts": 1759001357.006651, "type": "asr.finalized", "text": "And.", "start_ts": 17.395175838470458, "end_ts": 17.74517583847046}
+{"ts": 1759001359.609598, "type": "asr.finalized", "text": "okay seems to be working", "start_ts": 18.59818196296692, "end_ts": 20.34818196296692}
+{"ts": 1759001359.610021, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001359.610021}}
+{"ts": 1759001359.628896, "type": "asr.finalized", "text": "Okay. Seems to be working.", "start_ts": 18.617336988449097, "end_ts": 20.367336988449097}
+{"ts": 1759001361.6753201, "type": "asr.finalized", "text": "nice", "start_ts": 22.063928031921385, "end_ts": 22.413928031921387}
+{"ts": 1759001361.675981, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001361.675981}}
+{"ts": 1759001361.70399, "type": "asr.finalized", "text": "Nice.", "start_ts": 22.092287921905516, "end_ts": 22.442287921905518}
+{"ts": 1759001366.5235069, "type": "asr.finalized", "text": "what", "start_ts": 26.91213788986206, "end_ts": 27.26213788986206}
+{"ts": 1759001366.523967, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001366.523967}}
+{"ts": 1759001366.543413, "type": "asr.finalized", "text": "What?", "start_ts": 26.932020807266234, "end_ts": 27.282020807266235}
+{"ts": 1759001366.986013, "type": "asr.finalized", "text": "else", "start_ts": 27.374614858627318, "end_ts": 27.72461485862732}
+{"ts": 1759001367.016116, "type": "asr.finalized", "text": "Else.", "start_ts": 27.404723787307738, "end_ts": 27.75472378730774}
+{"ts": 1759001368.783919, "type": "asr.finalized", "text": "let's", "start_ts": 29.172466897964476, "end_ts": 29.522466897964478}
+{"ts": 1759001368.784487, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001368.784487}}
+{"ts": 1759001368.814709, "type": "asr.finalized", "text": "Let's.", "start_ts": 29.20331778526306, "end_ts": 29.55331778526306}
+{"ts": 1759001370.3421812, "type": "asr.finalized", "text": "now move on to", "start_ts": 29.680782890319826, "end_ts": 31.080782890319824}
+{"ts": 1759001370.34269, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001370.34269}}
+{"ts": 1759001370.371958, "type": "asr.finalized", "text": "Now move on to.", "start_ts": 29.71057209968567, "end_ts": 31.11057209968567}
+{"ts": 1759001371.4228961, "type": "asr.finalized", "text": "next part", "start_ts": 31.46146779060364, "end_ts": 32.16146779060364}
+{"ts": 1759001371.423681, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001371.423681}}
+{"ts": 1759001371.508441, "type": "asr.finalized", "text": "Next part.", "start_ts": 31.54699902534485, "end_ts": 32.24699902534485}
+{"ts": 1759001384.131639, "type": "asr.finalized", "text": "can you hear me loud and clear", "start_ts": 42.42026786804199, "end_ts": 44.87026786804199}
+{"ts": 1759001384.132073, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001384.132073}}
+{"ts": 1759001384.1555352, "type": "asr.finalized", "text": "Can you hear me? Loud and clear.", "start_ts": 42.44414000511169, "end_ts": 44.894140005111694}
+{"ts": 1759001384.583732, "type": "asr.finalized", "text": "hello hello", "start_ts": 44.62235693931579, "end_ts": 45.322356939315796}
+{"ts": 1759001384.605966, "type": "asr.finalized", "text": "Hello? Hello?", "start_ts": 44.64451413154602, "end_ts": 45.34451413154602}
+{"ts": 1759001436.660581, "type": "asr.finalized", "text": "okay am i audible", "start_ts": 5.53331503868103, "end_ts": 6.93331503868103}
+{"ts": 1759001436.662334, "type": "asr.finalized", "text": "Okay. Am I audible?", "start_ts": 5.533363914489746, "end_ts": 6.933363914489746}
+{"ts": 1759001439.501893, "type": "asr.finalized", "text": "hello", "start_ts": 9.424667978286744, "end_ts": 9.774667978286743}
+{"ts": 1759001439.5373518, "type": "asr.finalized", "text": "Hello.", "start_ts": 9.46011986732483, "end_ts": 9.810119867324829}
+{"ts": 1759001441.6744561, "type": "asr.finalized", "text": "right", "start_ts": 11.597190999984742, "end_ts": 11.947190999984741}
+{"ts": 1759001441.7002501, "type": "asr.finalized", "text": "Right.", "start_ts": 11.623010778427124, "end_ts": 11.973010778427124}
+{"ts": 1759001443.500532, "type": "asr.finalized", "text": "so let's begin", "start_ts": 12.72329397201538, "end_ts": 13.77329397201538}
+{"ts": 1759001443.560587, "type": "asr.finalized", "text": "So let's begin.", "start_ts": 12.780095052719116, "end_ts": 13.830095052719116}
+{"ts": 1759001445.8217332, "type": "asr.finalized", "text": "where to start", "start_ts": 15.044479084014892, "end_ts": 16.094479084014893}
+{"ts": 1759001445.8489852, "type": "asr.finalized", "text": "Where to start.", "start_ts": 15.07172269821167, "end_ts": 16.12172269821167}
+{"ts": 1759001449.6149912, "type": "asr.finalized", "text": "i have it nervous", "start_ts": 18.487755870819093, "end_ts": 19.887755870819092}
+{"ts": 1759001449.647146, "type": "asr.finalized", "text": "I have it nervous.", "start_ts": 18.51989302635193, "end_ts": 19.91989302635193}
+{"ts": 1759001455.003886, "type": "asr.finalized", "text": "come", "start_ts": 24.926635885238646, "end_ts": 25.276635885238647}
+{"ts": 1759001455.035135, "type": "asr.finalized", "text": "Come.", "start_ts": 24.957865142822264, "end_ts": 25.307865142822266}
+{"ts": 1759001455.3401, "type": "asr.finalized", "text": "on", "start_ts": 25.262828969955443, "end_ts": 25.612828969955444}
+{"ts": 1759001455.3733609, "type": "asr.finalized", "text": "On.", "start_ts": 25.296084070205687, "end_ts": 25.64608407020569}
+{"ts": 1759001461.9712179, "type": "asr.finalized", "text": "hello", "start_ts": 31.89397802352905, "end_ts": 32.24397802352905}
+{"ts": 1759001462.002207, "type": "asr.finalized", "text": "Hello.", "start_ts": 31.924963855743407, "end_ts": 32.27496385574341}
+{"ts": 1759001474.711615, "type": "asr.finalized", "text": "i don't", "start_ts": 44.28437976837158, "end_ts": 44.98437976837158}
+{"ts": 1759001474.746052, "type": "asr.finalized", "text": "I don't.", "start_ts": 44.31880073547363, "end_ts": 45.01880073547363}
+{"ts": 1759001475.0478349, "type": "asr.finalized", "text": "know", "start_ts": 44.97058191299438, "end_ts": 45.320581912994385}
+{"ts": 1759001475.071759, "type": "asr.finalized", "text": "Know.", "start_ts": 44.99451198577881, "end_ts": 45.34451198577881}
+{"ts": 1759001475.9768581, "type": "asr.finalized", "text": "what's going on", "start_ts": 45.199498128890994, "end_ts": 46.24949812889099}
+{"ts": 1759001475.9778361, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759001475.9778361}}
+{"ts": 1759001476.018155, "type": "asr.finalized", "text": "What's going on?", "start_ts": 45.24081392288208, "end_ts": 46.29081392288208}
+{"ts": 1759001490.3231812, "type": "asr.finalized", "text": "i don't know what's going on", "start_ts": 58.495951080322264, "end_ts": 60.595951080322266}
+{"ts": 1759001490.323741, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["stuck", "still_speaking"], "scores": {"stuck": 0.6, "still_speaking": 0.7}, "speak_gate": "hold", "reason": "stuck, still_speaking", "timestamp": 1759001490.323741}}
+{"ts": 1759001490.352322, "type": "asr.finalized", "text": "I don't know what's going on.", "start_ts": 58.525077962875365, "end_ts": 60.625077962875366}
+{"ts": 1759001491.626923, "type": "asr.finalized", "text": "please help me", "start_ts": 60.84966988563538, "end_ts": 61.899669885635376}
+{"ts": 1759001491.628128, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["stuck", "still_speaking"], "scores": {"stuck": 0.6, "still_speaking": 0.7}, "speak_gate": "hold", "reason": "stuck, still_speaking", "timestamp": 1759001491.628128}}
+{"ts": 1759001491.647348, "type": "asr.finalized", "text": "Please help me.", "start_ts": 60.870093774795535, "end_ts": 61.92009377479553}{"ts": 1759002211.495828, "type": "asr.finalized", "text": "hello hello", "start_ts": 8.40128402709961, "end_ts": 9.10128402709961}
+{"ts": 1759002211.49743, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759002211.49743}}
+{"ts": 1759002211.516848, "type": "asr.finalized", "text": "Hello? Hello?", "start_ts": 8.422365951538087, "end_ts": 9.122365951538086}
+{"ts": 1759002219.0968661, "type": "asr.finalized", "text": "yeah so in today's session i'll be asking you questions", "start_ts": 13.202386856079102, "end_ts": 16.7023868560791}
+{"ts": 1759002219.098146, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759002219.098146}}
+{"ts": 1759002219.132617, "type": "asr.finalized", "text": "Yeah. So in today's session, I'll be asking you questions.", "start_ts": 13.238107204437256, "end_ts": 16.738107204437256}
+{"ts": 1759002222.425855, "type": "asr.finalized", "text": "on strings and arrays", "start_ts": 18.631349897384645, "end_ts": 20.031349897384644}
+{"ts": 1759002222.4264529, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759002222.4264529}}
+{"ts": 1759002222.4550211, "type": "asr.finalized", "text": "On strings and arrays.", "start_ts": 18.660516119003297, "end_ts": 20.060516119003296}
+{"ts": 1759002231.936359, "type": "asr.finalized", "text": "i want you to confidently answer blah blah blah blah blah blah blah", "start_ts": 24.99186701774597, "end_ts": 29.54186701774597}
+{"ts": 1759002231.936922, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759002231.936922}}
+{"ts": 1759002231.9533598, "type": "asr.finalized", "text": "I want you to confidently answer, blah, blah, blah, blah, blah, blah, blah.", "start_ts": 25.008854103088378, "end_ts": 29.55885410308838}
+{"ts": 1759002243.756437, "type": "asr.finalized", "text": "you play speech recognition", "start_ts": 39.961950874328615, "end_ts": 41.36195087432861}
+{"ts": 1759002243.7569869, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759002243.7569869}}
+{"ts": 1759002243.780019, "type": "asr.finalized", "text": "You play speech recognition?", "start_ts": 39.98551497459412, "end_ts": 41.385514974594116}
+{"ts": 1759002245.5048761, "type": "asr.finalized", "text": "transcription", "start_ts": 42.760371112823485, "end_ts": 43.110371112823486}
+{"ts": 1759002245.505451, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759002245.505451}}
+{"ts": 1759002245.533447, "type": "asr.finalized", "text": "Transcription.", "start_ts": 42.788941049575804, "end_ts": 43.138941049575806}
+{"ts": 1759002266.5860941, "type": "asr.finalized", "text": "and menu tag model bg to tell a b action nache right comment it tags it as still speaking lakanagarman i'll say hello i feel nervous i'm scared can you please help me", "start_ts": 52.64160389900208, "end_ts": 64.19160389900208}
+{"ts": 1759002266.587418, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759002266.587418}}
+{"ts": 1759002266.708571, "type": "asr.finalized", "text": "And menu tag model BG to tell a B action nache right Comment it tags it as still speaking. Lakanagarman I'll say hello. I feel nervous. I'm scared. Can you please help me?", "start_ts": 52.76407403945923, "end_ts": 64.31407403945923}
+{"ts": 1759002269.516395, "type": "asr.finalized", "text": "basically", "start_ts": 66.77188506126404, "end_ts": 67.12188506126404}
+{"ts": 1759002269.517041, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759002269.517041}}
+{"ts": 1759002269.5429099, "type": "asr.finalized", "text": "Basically.", "start_ts": 66.79838123321534, "end_ts": 67.14838123321533}
+{"ts": 1759002275.114244, "type": "asr.finalized", "text": "so update nice cover nature", "start_ts": 70.96967625617981, "end_ts": 72.71967625617981}
+{"ts": 1759002275.114757, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759002275.114757}}
+{"ts": 1759002275.1150331, "type": "asr.finalized", "text": "So update. Nice cover nature.", "start_ts": 70.96976900100708, "end_ts": 72.71976900100708}
+{"ts": 1759002288.29212, "type": "asr.finalized", "text": "the garfield knows i'm scared furby is still speaking bull raku bull it should now say nahi", "start_ts": 79.94761996269226, "end_ts": 85.89761996269226}
+{"ts": 1759002288.292647, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759002288.292647}}
+{"ts": 1759002288.32378, "type": "asr.finalized", "text": "The Garfield knows I'm scared. Furby is still speaking bull Raku. Bull. It should now say nahi.", "start_ts": 79.97922902107238, "end_ts": 85.92922902107239}
+{"ts": 1759002302.298114, "type": "asr.finalized", "text": "give it intense two three minutes whatever", "start_ts": 97.45362000465393, "end_ts": 99.90362000465393}
+{"ts": 1759002302.298571, "type": "mini.tag", "window_s": 10, "pretext_s": 60, "payload": {"tags": ["still_speaking"], "scores": {"still_speaking": 0.6}, "speak_gate": "hold", "reason": "still_speaking", "timestamp": 1759002302.298571}}
+{"ts": 1759002302.4626582, "type": "asr.finalized", "text": "Give it intense. Two, three minutes, whatever.", "start_ts": 97.61815004348755, "end_ts": 100.06815004348755}
