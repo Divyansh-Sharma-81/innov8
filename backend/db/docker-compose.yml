@@ -1,0 +1,13 @@
+version: "3.9"
+services:
+  pg:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: codesage
+      POSTGRES_PASSWORD: codesage
+      POSTGRES_DB: codesage
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data

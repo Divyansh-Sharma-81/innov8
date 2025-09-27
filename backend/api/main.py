@@ -6,18 +6,24 @@ import logging
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, Set
+from typing import Any, Dict, List, Optional, Set
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
+from sqlalchemy.exc import NoResultFound
 
 from backend.services.transcriber.schema import TranscriptChunk, WindowPayload
 from backend.services.transcriber.service import TranscriberRunner, TranscriberService
 from backend.services.mini_llm.schema import MiniInput, MiniOutput
 from backend.services.mini_llm.service import MiniLLMService
+from backend.services.problemset.schema import MonacoPayload, ProblemDTO
+from backend.services.problemset.seed import seed_from_csv
+from backend.services.problemset.service import ProblemsetService
+from backend.services.judge.schema import ExecResult
+from backend.services.judge.service import JudgeService
 
 
 load_dotenv()
@@ -37,6 +43,12 @@ class Settings(BaseSettings):
     ASR_CHANNELS: int = 1
     ASR_FORMAT: str = "pcm_s16le"
     ASR_RECONNECT_SECS: float = 2.0
+    DATABASE_URL: str
+    JUDGE0_HOST: str | None = None
+    JUDGE0_KEY: str | None = None
+    JUDGE0_LANG_PY: int = 71
+    USE_JUDGE0_MOCK: bool = True
+    ENABLE_DEV_ENDPOINTS: bool = False
 
     class Config:
         env_file = ".env"
@@ -46,11 +58,18 @@ class Settings(BaseSettings):
 settings = Settings()
 app = FastAPI(title="Innov8 Mini Orchestrator")
 transcriber_service = TranscriberService()
+problem_service = ProblemsetService(database_url=settings.DATABASE_URL)
 mini_llm_service = MiniLLMService(
     api_key=settings.GROQ_API_KEY,
     base_url=settings.GROQ_BASE_URL,
     model_id=settings.MINI_MODEL_ID,
     use_mock=settings.MINI_USE_MOCK,
+)
+judge_service = JudgeService(
+    host=settings.JUDGE0_HOST,
+    api_key=settings.JUDGE0_KEY,
+    language_id=settings.JUDGE0_LANG_PY,
+    use_mock=settings.USE_JUDGE0_MOCK,
 )
 transcriber_runner = TranscriberRunner(
     transcriber=transcriber_service,
@@ -71,6 +90,12 @@ class SessionControlRequest(BaseModel):
     session_id: str
     device_label: str | None = None
     device_index: int | None = None
+
+
+class RunRequest(BaseModel):
+    problem_id: str
+    source: str
+    language: str = "python"
 
 
 class WebSocketHub:
@@ -128,6 +153,24 @@ def log_asr_chunk(chunk: TranscriptChunk) -> None:
     )
 
 
+async def broadcast_problem_presented(session_id: str, payload: MonacoPayload) -> None:
+    event = {
+        "type": "problem.presented",
+        "session_id": session_id,
+        "payload": payload.dict(),
+    }
+    append_session_event(
+        session_id,
+        {
+            "ts": time.time(),
+            "type": "problem.presented",
+            "payload": payload.dict(),
+        },
+    )
+    if settings.WS_ENABLED:
+        await ws_hub.broadcast(session_id, event)
+
+
 async def process_window(window: WindowPayload) -> MiniOutput:
     try:
         mini_out = await mini_llm_service.call(window)
@@ -159,6 +202,7 @@ async def process_window(window: WindowPayload) -> MiniOutput:
 @app.on_event("startup")
 async def _startup() -> None:
     await mini_llm_service.start()
+    await judge_service.start()
     transcriber_service.set_window_consumer(process_window)
     transcriber_runner.set_chunk_logger(log_asr_chunk)
 
@@ -167,6 +211,7 @@ async def _startup() -> None:
 async def _shutdown() -> None:
     await transcriber_runner.stop_all()
     await mini_llm_service.close()
+    await judge_service.close()
 
 
 @app.get("/healthz", response_class=JSONResponse)
@@ -232,3 +277,73 @@ async def websocket_endpoint(session_id: str, ws: WebSocket, cfg: Settings = Dep
         pass
     finally:
         await ws_hub.unregister(session_id, ws)
+
+
+# ------------------------ Problemset Endpoints -------------------------
+
+
+@app.get("/problems/ratings", response_model=List[int])
+async def list_ratings() -> List[int]:
+    return problem_service.list_ratings()
+
+
+@app.get("/problems/search", response_model=List[ProblemDTO])
+async def search_problems(
+    rating: Optional[int] = Query(default=None),
+    tags: Optional[str] = Query(default=None, description="Comma separated tags"),
+    limit: int = Query(default=1, ge=1, le=10),
+) -> List[ProblemDTO]:
+    tag_list = [tag.strip() for tag in (tags.split(",") if tags else []) if tag.strip()]
+    return problem_service.search(rating=rating, tags=tag_list, limit=limit)
+
+
+@app.get("/problems/{problem_id}", response_model=ProblemDTO)
+async def get_problem(problem_id: str) -> ProblemDTO:
+    try:
+        return problem_service.get_problem(problem_id)
+    except NoResultFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/problems/seed")
+async def seed_problems(force: bool = Body(default=False)) -> Dict[str, bool]:
+    if not settings.ENABLE_DEV_ENDPOINTS and not force:
+        raise HTTPException(status_code=403, detail="Seeding endpoint disabled")
+    seed_from_csv(problem_service)
+    return {"ok": True}
+
+
+@app.get("/editor/payload", response_model=MonacoPayload)
+async def get_monaco_payload(
+    problem_id: Optional[str] = Query(default=None),
+    rating: Optional[int] = Query(default=None),
+    tags: Optional[str] = Query(default=None, description="Comma separated tags"),
+    limit: int = Query(default=1, ge=1, le=10),
+    session_id: Optional[str] = Query(default=None),
+    broadcast: bool = Query(default=False),
+) -> MonacoPayload:
+    tag_list = [tag.strip() for tag in (tags.split(",") if tags else []) if tag.strip()]
+    try:
+        payload = problem_service.monaco_payload(
+            problem_id=problem_id,
+            rating=rating,
+            tags=tag_list,
+            limit=limit,
+        )
+    except NoResultFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if broadcast and session_id:
+        await broadcast_problem_presented(session_id, payload)
+    return payload
+
+
+@app.post("/run", response_model=ExecResult)
+async def run_submission(request: RunRequest) -> ExecResult:
+    if request.language.lower() != "python":
+        raise HTTPException(status_code=400, detail="Only Python is supported currently")
+    try:
+        samples = problem_service.get_samples(request.problem_id)
+    except NoResultFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    result = await judge_service.run_python_cases(request.source, samples)
+    return result
