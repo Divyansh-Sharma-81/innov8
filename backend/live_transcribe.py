@@ -9,7 +9,7 @@ import time
 SAMPLE_RATE = 16000
 BLOCK_DURATION = 0.5  # in seconds
 CHUNK_DURATION = 2    # in seconds
-MODEL_SIZE = "small"  # "small" is a good balance of speed and accuracy for CPU
+MODEL_SIZE = "small.en"  # "small" is a good balance of speed and accuracy for CPU
 DEVICE = "cpu"        # Set to "cpu"
 COMPUTE_TYPE = "int8" # "int8" is the fastest compute type for CPU
 
