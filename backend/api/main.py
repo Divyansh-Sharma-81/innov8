@@ -24,6 +24,8 @@ from backend.services.problemset.seed import seed_from_csv
 from backend.services.problemset.service import ProblemsetService
 from backend.services.judge.schema import ExecResult
 from backend.services.judge.service import JudgeService
+from backend.services.orchestrator.schema import Decision, TriggerEvent
+from backend.services.orchestrator.service import Orchestrator
 
 
 load_dotenv()
@@ -93,9 +95,22 @@ class SessionControlRequest(BaseModel):
 
 
 class RunRequest(BaseModel):
+    session_id: str
     problem_id: str
     source: str
     language: str = "python"
+
+
+class PresentProblemRequest(BaseModel):
+    session_id: str
+    rating: Optional[int] = None
+    tags: Optional[List[str]] = None
+    problem_id: Optional[str] = None
+    broadcast: bool = True
+
+
+class IdleTickRequest(BaseModel):
+    session_id: str
 
 
 class WebSocketHub:
@@ -171,6 +186,96 @@ async def broadcast_problem_presented(session_id: str, payload: MonacoPayload) -
         await ws_hub.broadcast(session_id, event)
 
 
+orchestrator = Orchestrator(
+    problem_service=problem_service,
+    broadcast_problem=broadcast_problem_presented,
+    logger=append_session_event,
+)
+
+
+async def emit_agent_event(
+    event_type: str,
+    session_id: str,
+    *,
+    text: str,
+    level: str,
+    reason: str,
+) -> None:
+    event = {
+        "ts": time.time(),
+        "type": event_type,
+        "text": text,
+        "level": level,
+        "reason": reason,
+    }
+    append_session_event(session_id, event)
+    if settings.WS_ENABLED:
+        await ws_hub.broadcast(
+            session_id,
+            {
+                "type": event_type,
+                "session_id": session_id,
+                "text": text,
+                "level": level,
+                "reason": reason,
+            },
+        )
+
+
+def log_agent_silence(session_id: str, reason: str) -> None:
+    append_session_event(
+        session_id,
+        {
+            "ts": time.time(),
+            "type": "agent.stay_silent",
+            "reason": reason,
+        },
+    )
+
+
+async def execute_decision(session_id: str, decision: Decision) -> List[Dict[str, Any]]:
+    executed: List[Dict[str, Any]] = []
+    for action in decision.actions:
+        if action.type == "present_problem":
+            payload = await orchestrator.present_problem(
+                session_id,
+                rating=action.data.get("rating"),
+                tags=action.data.get("tags"),
+                problem_id=action.data.get("problem_id"),
+                broadcast=action.data.get("broadcast", True),
+            )
+            executed.append({
+                "action": action.dict(),
+                "payload": payload.dict(),
+            })
+        elif action.type == "send_message":
+            text = action.data.get("text", "All good.")
+            level = action.data.get("level", "plain")
+            await emit_agent_event(
+                "agent.message",
+                session_id,
+                text=text,
+                level=level,
+                reason=action.reason,
+            )
+            executed.append({"action": action.dict()})
+        elif action.type == "give_hint":
+            text = action.data.get("text", "Consider outlining your solution before coding.")
+            level = action.data.get("level", "guide")
+            await emit_agent_event(
+                "agent.hint",
+                session_id,
+                text=text,
+                level=level,
+                reason=action.reason,
+            )
+            executed.append({"action": action.dict()})
+        elif action.type == "stay_silent":
+            log_agent_silence(session_id, action.reason)
+            executed.append({"action": action.dict()})
+    return executed
+
+
 async def process_window(window: WindowPayload) -> MiniOutput:
     try:
         mini_out = await mini_llm_service.call(window)
@@ -196,6 +301,15 @@ async def process_window(window: WindowPayload) -> MiniOutput:
             window.session_id,
             {"type": "mini.tag", "session_id": window.session_id, "payload": mini_out.dict()},
         )
+    decision = orchestrator.handle_event(
+        TriggerEvent(
+            session_id=window.session_id,
+            kind="mini.tag",
+            payload=mini_out.dict(),
+            ts=mini_out.timestamp or time.time(),
+        )
+    )
+    await execute_decision(window.session_id, decision)
     return mini_out
 
 
@@ -346,4 +460,77 @@ async def run_submission(request: RunRequest) -> ExecResult:
     except NoResultFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     result = await judge_service.run_python_cases(request.source, samples)
+    result_dict = result.dict()
+    result_ts = time.time()
+    append_session_event(
+        request.session_id,
+        {
+            "ts": result_ts,
+            "type": "exec.result",
+            "problem_id": request.problem_id,
+            "result": result_dict,
+        },
+    )
+    trigger_payload = dict(result_dict)
+    trigger_payload["problem_id"] = request.problem_id
+    decision = orchestrator.handle_event(
+        TriggerEvent(
+            session_id=request.session_id,
+            kind="exec.result",
+            payload=trigger_payload,
+            ts=result_ts,
+        )
+    )
+    await execute_decision(request.session_id, decision)
     return result
+
+
+# ------------------------ Orchestrator Endpoints -------------------------
+
+
+@app.post("/orchestrator/trigger")
+async def orchestrator_trigger(event: TriggerEvent) -> Dict[str, Any]:
+    decision = orchestrator.handle_event(event)
+    executed = await execute_decision(event.session_id, decision)
+    return {
+        "actions": [action.dict() for action in decision.actions],
+        "executed": executed,
+        "state": orchestrator.get_state(event.session_id),
+    }
+
+
+@app.post("/orchestrator/present-problem", response_model=MonacoPayload)
+async def orchestrator_present_problem(body: PresentProblemRequest) -> MonacoPayload:
+    payload = await orchestrator.present_problem(
+        body.session_id,
+        rating=body.rating,
+        tags=body.tags,
+        problem_id=body.problem_id,
+        broadcast=body.broadcast,
+    )
+    return payload
+
+
+@app.post("/orchestrator/idle-tick")
+async def orchestrator_idle_tick(body: IdleTickRequest) -> Dict[str, Any]:
+    now = time.time()
+    state_snapshot = orchestrator.get_state(body.session_id)
+    last_activity = state_snapshot.get("last_activity_ts") if state_snapshot else None
+    if last_activity is None:
+        idle_ms = 0
+    else:
+        idle_ms = int(max(0.0, (now - last_activity) * 1000))
+    event = TriggerEvent(
+        session_id=body.session_id,
+        kind="idle.tick",
+        payload={"idle_ms": idle_ms},
+        ts=now,
+    )
+    decision = orchestrator.handle_event(event)
+    executed = await execute_decision(body.session_id, decision)
+    return {
+        "idle_ms": idle_ms,
+        "actions": [action.dict() for action in decision.actions],
+        "executed": executed,
+        "state": orchestrator.get_state(body.session_id),
+    }
