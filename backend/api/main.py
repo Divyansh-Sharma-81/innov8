@@ -8,8 +8,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import os
+
 from dotenv import load_dotenv
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
@@ -70,6 +73,7 @@ class Settings(BaseSettings):
     SNAPSHOTS_STORE_FULL: bool = False
     ENABLE_DEV_ENDPOINTS: bool = False
     CEREBRAS_API_KEY: str | None = None
+    CORS_ORIGINS: str = "*"
 
     class Config:
         env_file = ".env"
@@ -78,6 +82,18 @@ class Settings(BaseSettings):
 
 settings = Settings()
 app = FastAPI(title="Innov8 Mini Orchestrator")
+
+def _parse_origins(value: str) -> list[str]:
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    return items or ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_parse_origins(settings.CORS_ORIGINS),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 transcriber_service = TranscriberService()
 problem_service = ProblemsetService(database_url=settings.DATABASE_URL)
 mini_llm_service = MiniLLMService(
@@ -122,10 +138,24 @@ TIMELINE_KINDS = {
     "agent.hint",
     "agent.hr",
     "agent.aptitude",
+    "agent.error",
     "agent.stay_silent",
     "agent.action",
     "running.summary.updated",
     "interview.final",
+}
+
+TAG_SYNONYMS: dict[str, list[str]] = {
+    "coding": ["implementation"],
+    "implementation": ["implementation"],
+    "strings": ["strings"],
+    "string": ["strings"],
+    "math": ["math"],
+    "greedy": ["greedy"],
+    "dp": ["dp"],
+    "dynamic programming": ["dp"],
+    "graphs": ["graphs"],
+    "graph": ["graphs"],
 }
 
 
@@ -172,12 +202,17 @@ class WebSocketHub:
         await ws.accept()
         async with self._lock:
             self._connections[session_id].add(ws)
+        await ensure_idle_monitor(session_id)
 
     async def unregister(self, session_id: str, ws: WebSocket) -> None:
+        should_stop = False
         async with self._lock:
             self._connections[session_id].discard(ws)
             if not self._connections[session_id]:
                 self._connections.pop(session_id, None)
+                should_stop = True
+        if should_stop:
+            await stop_idle_monitor(session_id)
 
     async def broadcast(self, session_id: str, payload: Dict[str, Any]) -> None:
         async with self._lock:
@@ -359,6 +394,32 @@ def log_agent_silence(session_id: str, reason: str) -> None:
     )
 
 
+async def log_agent_error(
+    session_id: str,
+    *,
+    detail: str,
+    data: Optional[Dict[str, Any]] = None,
+) -> None:
+    event = {
+        "ts": time.time(),
+        "type": "agent.error",
+        "detail": detail,
+    }
+    if data:
+        event["data"] = data
+    append_session_event(session_id, event)
+    if settings.WS_ENABLED:
+        await ws_hub.broadcast(
+            session_id,
+            {
+                "type": "agent.error",
+                "session_id": session_id,
+                "detail": detail,
+                "data": data,
+            },
+        )
+
+
 async def emit_agent_question(
     event_type: str,
     session_id: str,
@@ -394,6 +455,9 @@ class AgentActionRegistry:
     def __init__(self, orchestrator_service: Orchestrator, templates: TemplatesService) -> None:
         self._orchestrator = orchestrator_service
         self._templates = templates
+        self._problem_service = orchestrator_service.problem_service
+        self._valid_tags: Optional[Set[str]] = None
+        self._valid_ratings: Optional[Set[int]] = None
 
     async def execute(self, payload: AgentInPayload, decision: AgentOutPayload) -> AgentOutPayload:
         session_id = payload.session_id
@@ -419,16 +483,18 @@ class AgentActionRegistry:
         )
 
         if final_action == "present_problem":
-            payload_tags = executed.desired_tags or None
+            requested_tags = executed.desired_tags or None
             next_rating = executed.next_rating
-            await self._orchestrator.present_problem(
+            resolved = await self._present_problem_with_fallback(
                 session_id,
                 rating=next_rating,
-                tags=payload_tags,
-                broadcast=True,
+                desired_tags=requested_tags,
             )
             self._templates.increment(session_id, "coding")
             self._orchestrator.register_agent_action(session_id, "present_problem", now)
+            if resolved:
+                resolved_rating, resolved_tags = resolved
+                return executed.copy(update={"next_rating": resolved_rating, "desired_tags": resolved_tags})
             return executed
 
         if final_action == "send_message":
@@ -487,8 +553,115 @@ class AgentActionRegistry:
         self._orchestrator.register_agent_action(session_id, "stay_silent", now)
         return executed.copy(update={"text": "", "hint_level": None})
 
+    async def _present_problem_with_fallback(
+        self,
+        session_id: str,
+        *,
+        rating: Optional[int],
+        desired_tags: Optional[List[str]],
+    ) -> Optional[Tuple[Optional[int], Optional[List[str]]]]:
+        normalized_tags = self._normalize_tags(desired_tags)
+        state = self._orchestrator.get_state(session_id)
+        normalized_rating = self._normalize_rating(rating, state.get("current_rating"))
+        try:
+            await self._orchestrator.present_problem(
+                session_id,
+                rating=normalized_rating,
+                tags=normalized_tags,
+                broadcast=True,
+            )
+            return normalized_rating, normalized_tags
+        except NoResultFound as exc:
+            fallback_rating = self._normalize_rating(
+                state.get("current_rating"),
+                state.get("current_rating"),
+            ) or self._orchestrator.config.base_rating
+            await log_agent_error(
+                session_id,
+                detail="Problem lookup failed; falling back to default criteria",
+                data={
+                    "requested_rating": rating,
+                    "normalized_rating": normalized_rating,
+                    "requested_tags": desired_tags,
+                    "normalized_tags": normalized_tags,
+                    "error": str(exc),
+                },
+            )
+            try:
+                await self._orchestrator.present_problem(
+                    session_id,
+                    rating=fallback_rating,
+                    tags=None,
+                    broadcast=True,
+                )
+                return fallback_rating, None
+            except NoResultFound as exc2:
+                await log_agent_error(
+                    session_id,
+                    detail="Fallback problem lookup failed",
+                    data={
+                        "fallback_rating": fallback_rating,
+                        "error": str(exc2),
+                    },
+                )
+                raise HTTPException(status_code=500, detail="No problems available for this session") from exc2
+
+    def _normalize_tags(self, desired_tags: Optional[List[str]]) -> Optional[List[str]]:
+        if not desired_tags:
+            return None
+        tag_cache = self._ensure_valid_tags()
+        if not tag_cache:
+            return None
+        normalized: List[str] = []
+        seen: Set[str] = set()
+        for raw_tag in desired_tags:
+            text = str(raw_tag or "").strip().lower()
+            if not text:
+                continue
+            candidates = TAG_SYNONYMS.get(text, [text])
+            for candidate in candidates:
+                if candidate in tag_cache and candidate not in seen:
+                    seen.add(candidate)
+                    normalized.append(candidate)
+        return normalized or None
+
+    def _ensure_valid_tags(self) -> Set[str]:
+        if self._valid_tags is None:
+            try:
+                self._valid_tags = set(self._problem_service.list_tags())
+            except Exception:
+                self._valid_tags = set()
+        return self._valid_tags
+
+    def _normalize_rating(
+        self,
+        requested: Optional[int],
+        fallback: Optional[int],
+    ) -> Optional[int]:
+        if requested is None:
+            return fallback
+        rating_cache = self._ensure_valid_ratings()
+        if not rating_cache:
+            return requested
+        if requested in rating_cache:
+            return requested
+        closest = min(rating_cache, key=lambda value: abs(value - requested))
+        return closest
+
+    def _ensure_valid_ratings(self) -> Set[int]:
+        if self._valid_ratings is None:
+            try:
+                self._valid_ratings = set(self._problem_service.list_ratings())
+            except Exception:
+                self._valid_ratings = set()
+        return self._valid_ratings
+
 
 action_registry = AgentActionRegistry(orchestrator, templates_service)
+
+IDLE_TICK_SECONDS = 20.0
+_SESSION_IDLE_TASKS: Dict[str, asyncio.Task] = {}
+_IDLE_TASK_LOCK = asyncio.Lock()
 
 
 def read_session_events(session_id: str) -> List[Dict[str, Any]]:
@@ -575,6 +748,56 @@ async def execute_decision(session_id: str, decision: Decision) -> List[Dict[str
     return executed
 
 
+async def ensure_idle_monitor(session_id: str) -> None:
+    async with _IDLE_TASK_LOCK:
+        if session_id in _SESSION_IDLE_TASKS:
+            return
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(_idle_tick_loop(session_id))
+        _SESSION_IDLE_TASKS[session_id] = task
+
+
+async def stop_idle_monitor(session_id: str) -> None:
+    task: Optional[asyncio.Task]
+    async with _IDLE_TASK_LOCK:
+        task = _SESSION_IDLE_TASKS.pop(session_id, None)
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _idle_tick_loop(session_id: str) -> None:
+    try:
+        while True:
+            await asyncio.sleep(IDLE_TICK_SECONDS)
+            now = time.time()
+            state = orchestrator.get_state(session_id)
+            if not state:
+                continue
+            last_activity = float(state.get("last_activity_ts", now) or now)
+            idle_ms = int(max(0.0, (now - last_activity) * 1000))
+            decision = orchestrator.handle_event(
+                TriggerEvent(
+                    session_id=session_id,
+                    kind="idle.tick",
+                    payload={"idle_ms": idle_ms},
+                    ts=now,
+                )
+            )
+            if decision.actions:
+                await execute_decision(session_id, decision)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        async with _IDLE_TASK_LOCK:
+            existing = _SESSION_IDLE_TASKS.get(session_id)
+            if existing is asyncio.current_task():
+                _SESSION_IDLE_TASKS.pop(session_id, None)
+
+
 async def process_window(window: WindowPayload) -> MiniOutput:
     try:
         mini_out = await mini_llm_service.call(window)
@@ -635,7 +858,7 @@ async def healthz() -> Dict[str, str]:
 
 
 @app.post("/asr/start")
-async def asr_start(request: SessionControlRequest) -> Dict[str, bool]:
+async def asr_start(request: SessionControlRequest) -> Dict[str, Any]:
     try:
         await transcriber_runner.start_stream(
             request.session_id,
@@ -643,16 +866,18 @@ async def asr_start(request: SessionControlRequest) -> Dict[str, bool]:
             request.device_index,
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.warning("ASR start failed for %s: %s", request.session_id, exc)
+        return {"ok": False, "reason": str(exc)}
     return {"ok": True}
 
 
 @app.post("/asr/stop")
-async def asr_stop(request: SessionControlRequest) -> Dict[str, bool]:
+async def asr_stop(request: SessionControlRequest) -> Dict[str, Any]:
     try:
         await transcriber_runner.stop_stream(request.session_id)
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.warning("ASR stop failed for %s: %s", request.session_id, exc)
+        return {"ok": False, "reason": str(exc)}
     return {"ok": True}
 
 
@@ -955,6 +1180,7 @@ async def agent_finalize(body: AgentFinalizeRequest) -> FinalEval:
             "payload": final.dict(),
         },
     )
+    await stop_idle_monitor(body.session_id)
     return final
 
 

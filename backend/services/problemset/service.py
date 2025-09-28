@@ -87,6 +87,15 @@ class ProblemsetService:
             rows = sess.execute(select(Problem.rating).distinct().order_by(Problem.rating)).scalars().all()
         return list(rows)
 
+    def list_tags(self) -> List[str]:
+        with self.session() as sess:
+            rows = (
+                sess.execute(select(ProblemTag.tag).distinct().order_by(ProblemTag.tag))
+                .scalars()
+                .all()
+            )
+        return [row.strip().lower() for row in rows if row and row.strip()]
+
     def get_problem(self, problem_id: str) -> ProblemDTO:
         with self.session() as sess:
             query = (
