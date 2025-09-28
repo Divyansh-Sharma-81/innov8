@@ -6,7 +6,7 @@ import logging
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from dotenv import load_dotenv
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -26,6 +26,13 @@ from backend.services.judge.schema import ExecResult
 from backend.services.judge.service import JudgeService
 from backend.services.orchestrator.schema import Decision, TriggerEvent
 from backend.services.orchestrator.service import Orchestrator
+from backend.services.snapshots.schema import (
+    SnapshotIn,
+    SnapshotOut,
+    TimelinePage,
+    TimelineSummary,
+)
+from backend.services.snapshots.service import SnapshotService
 
 
 load_dotenv()
@@ -86,6 +93,7 @@ transcriber_runner = TranscriberRunner(
 
 SESSIONS_DIR = Path(__file__).resolve().parent.parent / "data" / "sessions"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+TIMELINE_KINDS = {"any", "diff.snapshot", "exec.result", "problem.presented", "mini.tag"}
 
 
 class SessionControlRequest(BaseModel):
@@ -99,6 +107,7 @@ class RunRequest(BaseModel):
     problem_id: str
     source: str
     language: str = "python"
+    cursor_line: Optional[int] = None
 
 
 class PresentProblemRequest(BaseModel):
@@ -186,6 +195,16 @@ async def broadcast_problem_presented(session_id: str, payload: MonacoPayload) -
         await ws_hub.broadcast(session_id, event)
 
 
+async def broadcast_snapshot_event(session_id: str, payload: Dict[str, Any]) -> None:
+    if settings.WS_ENABLED:
+        await ws_hub.broadcast(session_id, payload)
+
+
+snapshot_service = SnapshotService(
+    logger_append_fn=append_session_event,
+    ws_broadcast_fn=broadcast_snapshot_event,
+)
+
 orchestrator = Orchestrator(
     problem_service=problem_service,
     broadcast_problem=broadcast_problem_presented,
@@ -231,6 +250,23 @@ def log_agent_silence(session_id: str, reason: str) -> None:
             "reason": reason,
         },
     )
+
+
+def read_session_events(session_id: str) -> List[Dict[str, Any]]:
+    path = SESSIONS_DIR / f"{session_id}.jsonl"
+    if not path.exists():
+        return []
+    events: List[Dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return events
 
 
 async def execute_decision(session_id: str, decision: Decision) -> List[Dict[str, Any]]:
@@ -451,10 +487,40 @@ async def get_monaco_payload(
     return payload
 
 
+@app.post("/editor/save", response_model=SnapshotOut)
+async def editor_save(snapshot: SnapshotIn) -> SnapshotOut:
+    if snapshot.language != "python":
+        raise HTTPException(status_code=400, detail="Only Python snapshots are supported")
+    out = await snapshot_service.snapshot(snapshot)
+    decision = orchestrator.handle_event(
+        TriggerEvent(
+            session_id=snapshot.session_id,
+            kind="ui.editor.save",
+            payload={
+                "version": out.version,
+                "lines_changed": out.diff_summary.lines_changed,
+            },
+            ts=out.diff_summary.timestamp,
+        )
+    )
+    await execute_decision(snapshot.session_id, decision)
+    return out
+
+
 @app.post("/run", response_model=ExecResult)
 async def run_submission(request: RunRequest) -> ExecResult:
     if request.language.lower() != "python":
         raise HTTPException(status_code=400, detail="Only Python is supported currently")
+    _snapshot = await snapshot_service.snapshot(
+        SnapshotIn(
+            session_id=request.session_id,
+            problem_id=request.problem_id,
+            language="python",
+            source=request.source,
+            cursor_line=request.cursor_line,
+            reason="run",
+        )
+    )
     try:
         samples = problem_service.get_samples(request.problem_id)
     except NoResultFound as exc:
@@ -534,3 +600,76 @@ async def orchestrator_idle_tick(body: IdleTickRequest) -> Dict[str, Any]:
         "executed": executed,
         "state": orchestrator.get_state(body.session_id),
     }
+
+
+@app.get("/timeline", response_model=TimelinePage)
+async def get_timeline(
+    session_id: str = Query(...),
+    kind: str = Query("any"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+) -> TimelinePage:
+    if kind not in TIMELINE_KINDS:
+        raise HTTPException(status_code=400, detail="Unsupported timeline kind filter")
+    events = read_session_events(session_id)
+    if kind == "any":
+        filtered = events
+    else:
+        filtered = [event for event in events if event.get("type") == kind]
+    total = len(filtered)
+    slice_end = min(offset + limit, total)
+    items = filtered[offset:slice_end]
+    next_offset = slice_end if slice_end < total else None
+    return TimelinePage(
+        session_id=session_id,
+        total=total,
+        items=items,
+        next_offset=next_offset,
+    )
+
+
+@app.get("/timeline/summary", response_model=TimelineSummary)
+async def timeline_summary(session_id: str = Query(...)) -> TimelineSummary:
+    events = read_session_events(session_id)
+    counts: Dict[str, int] = {}
+    diff_totals = {"added": 0, "removed": 0, "changed": 0}
+    last_versions: Dict[Tuple[str, str], int] = {}
+    last_pass_ratio: Optional[float] = None
+
+    for event in events:
+        event_type = event.get("type")
+        if not event_type:
+            continue
+        counts[event_type] = counts.get(event_type, 0) + 1
+        if event_type == "diff.snapshot":
+            summary = event.get("summary", {})
+            diff_totals["added"] += int(summary.get("added", 0))
+            diff_totals["removed"] += int(summary.get("removed", 0))
+            diff_totals["changed"] += int(summary.get("lines_changed", 0))
+            problem_id = event.get("problem_id")
+            language = event.get("language")
+            version = event.get("version") or summary.get("version")
+            if problem_id and language and version:
+                last_versions[(str(problem_id), str(language))] = int(version)
+        elif event_type == "exec.result":
+            result = event.get("result", {})
+            total = result.get("total")
+            passed = result.get("passed")
+            if total:
+                try:
+                    last_pass_ratio = (float(passed or 0) / float(total)) if total else None
+                except Exception:  # pragma: no cover - defensive
+                    last_pass_ratio = None
+
+    last_versions_list = [
+        {"problem_id": key[0], "language": key[1], "version": version}
+        for key, version in last_versions.items()
+    ]
+
+    return TimelineSummary(
+        session_id=session_id,
+        counts=counts,
+        diff_totals=diff_totals,
+        last_versions=last_versions_list,
+        last_pass_ratio=last_pass_ratio,
+    )

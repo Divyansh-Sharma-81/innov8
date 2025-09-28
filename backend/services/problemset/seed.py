@@ -81,12 +81,48 @@ def _parse_line_pairs(raw: str) -> List[Tuple[str, str]]:
     return pairs
 
 
+def _prepare_json_like(text: str) -> str:
+    result: List[str] = []
+    in_string = False
+    escape = False
+    i = 0
+    length = len(text)
+    while i < length:
+        ch = text[i]
+        if ch == '"' and not escape:
+            in_string = not in_string
+            result.append(ch)
+            i += 1
+            continue
+        if ch == "\\":
+            nxt = text[i + 1] if (i + 1) < length else ""
+            if not in_string and nxt == "n":
+                result.append("\n")
+                i += 2
+                escape = False
+                continue
+            if in_string:
+                escape = not escape
+            else:
+                escape = False
+            result.append(ch)
+            i += 1
+            continue
+        else:
+            if escape and in_string:
+                escape = False
+            result.append(ch)
+            i += 1
+    return "".join(result)
+
+
 def parse_samples(raw: str) -> List[Tuple[str, str]]:
     text = (raw or "").strip()
     if not text:
         return []
+    text_for_json = _prepare_json_like(text)
     try:
-        pairs = _parse_json_samples(text)
+        pairs = _parse_json_samples(text_for_json)
     except json.JSONDecodeError:
         pairs = _parse_line_pairs(text)
     return [(stdin, expected) for stdin, expected in pairs if stdin or expected]
@@ -114,8 +150,16 @@ def normalize_tags(raw: str, allowed: List[str]) -> List[str]:
     return sorted(set(tags))
 
 
+def _extract_url(row: Dict[str, str]) -> str:
+    for key in ("problem link", "problem", "problem ", "problems"):
+        value = row.get(key)
+        if value and value.strip():
+            return value.strip()
+    return ""
+
+
 def upsert_problem(session: Session, rating: int, row: Dict[str, str], allowed_tags: List[str]) -> None:
-    url = row.get("problem link", "").strip()
+    url = _extract_url(row)
     if not url:
         return
     statement = _normalize_blob(row.get("problem_statement", ""))

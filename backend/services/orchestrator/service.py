@@ -117,6 +117,11 @@ class Orchestrator:
     def _handle_editor_save(self, event: TriggerEvent, state: Dict[str, Any]) -> None:
         state["last_activity_ts"] = event.ts
         state["last_save_ts"] = event.ts
+        payload = event.payload or {}
+        if "version" in payload:
+            state["last_save_version"] = payload.get("version")
+        if "lines_changed" in payload:
+            state["last_save_lines_changed"] = payload.get("lines_changed")
 
     def _handle_idle_tick(self, event: TriggerEvent, state: Dict[str, Any]) -> None:
         payload = event.payload or {}
@@ -236,6 +241,24 @@ class Orchestrator:
                         session_id=session_id,
                         data={"text": "Still with me? Let me know if you want a hint or a break.", "level": "plain"},
                         reason="idle threshold",
+                        cooldown_s=self.config.chat_cooldown_s,
+                    )
+                ]
+
+        if event.kind == "ui.editor.save":
+            lines_changed = int(state.get("last_save_lines_changed", 0) or 0)
+            if lines_changed >= 10 and self._cooldown_passed(now, state.get("last_message_ts", 0.0), self.config.chat_cooldown_s):
+                state["last_message_ts"] = now
+                state["last_action_ts"] = now
+                return [
+                    AgentAction(
+                        type="send_message",
+                        session_id=session_id,
+                        data={
+                            "text": "Great progress — consider running the tests when you feel ready.",
+                            "level": "plain",
+                        },
+                        reason="significant save",
                         cooldown_s=self.config.chat_cooldown_s,
                     )
                 ]

@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 
 from .schema import IOSampleDTO, MonacoPayload, ProblemDTO
 
+from dotenv import load_dotenv
+
+load_dotenv()
 
 Base = declarative_base()
 
