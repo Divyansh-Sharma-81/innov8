@@ -33,6 +33,11 @@ from backend.services.snapshots.schema import (
     TimelineSummary,
 )
 from backend.services.snapshots.service import SnapshotService
+from backend.services.main_agent import AgentIn as AgentInPayload
+from backend.services.main_agent import AgentOut as AgentOutPayload
+from backend.services.main_agent import FinalEval, MainAgentService
+from backend.services.templates import TemplatesService
+from backend.services.templates.schema import InterviewPlan
 
 
 load_dotenv()
@@ -44,6 +49,9 @@ class Settings(BaseSettings):
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
     MINI_MODEL_ID: str = "llama-3.3-70b-versatile"
     MINI_USE_MOCK: bool = True
+    AGENT_MODEL_ID: str = "gpt-oss-120b"
+    USE_AGENT_MOCK: bool = True
+    AGENT_BASE_URL: str = "https://api.cerebras.ai/v1"
     WINDOW_SECONDS: int = 10
     PRETEXT_SECONDS: int = 60
     WS_ENABLED: bool = True
@@ -57,7 +65,11 @@ class Settings(BaseSettings):
     JUDGE0_KEY: str | None = None
     JUDGE0_LANG_PY: int = 71
     USE_JUDGE0_MOCK: bool = True
+    ANALYZER_ENABLED: bool = True
+    HINT_WINDOW_SECONDS: int = 25
+    SNAPSHOTS_STORE_FULL: bool = False
     ENABLE_DEV_ENDPOINTS: bool = False
+    CEREBRAS_API_KEY: str | None = None
 
     class Config:
         env_file = ".env"
@@ -80,6 +92,13 @@ judge_service = JudgeService(
     language_id=settings.JUDGE0_LANG_PY,
     use_mock=settings.USE_JUDGE0_MOCK,
 )
+templates_service = TemplatesService(database_url=settings.DATABASE_URL)
+main_agent_service = MainAgentService(
+    api_key=settings.CEREBRAS_API_KEY or settings.GROQ_API_KEY,
+    base_url=settings.AGENT_BASE_URL,
+    model_id=settings.AGENT_MODEL_ID,
+    use_mock=settings.USE_AGENT_MOCK,
+)
 transcriber_runner = TranscriberRunner(
     transcriber=transcriber_service,
     api_key=settings.ASSEMBLYAI_API_KEY,
@@ -93,7 +112,21 @@ transcriber_runner = TranscriberRunner(
 
 SESSIONS_DIR = Path(__file__).resolve().parent.parent / "data" / "sessions"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-TIMELINE_KINDS = {"any", "diff.snapshot", "exec.result", "problem.presented", "mini.tag"}
+TIMELINE_KINDS = {
+    "any",
+    "diff.snapshot",
+    "exec.result",
+    "problem.presented",
+    "mini.tag",
+    "agent.message",
+    "agent.hint",
+    "agent.hr",
+    "agent.aptitude",
+    "agent.stay_silent",
+    "agent.action",
+    "running.summary.updated",
+    "interview.final",
+}
 
 
 class SessionControlRequest(BaseModel):
@@ -119,6 +152,14 @@ class PresentProblemRequest(BaseModel):
 
 
 class IdleTickRequest(BaseModel):
+    session_id: str
+
+
+class AgentPlanRequest(BaseModel):
+    session_id: str
+
+
+class AgentFinalizeRequest(BaseModel):
     session_id: str
 
 
@@ -155,6 +196,69 @@ ws_hub = WebSocketHub()
 
 def get_settings() -> Settings:
     return settings
+
+
+RUNNING_SUMMARY: Dict[str, str] = {}
+BEST_PROBLEM_TIMES: Dict[str, float] = {}
+
+
+def append_running_summary(session_id: str, update: str) -> str:
+    snippet = (update or "").strip()
+    if not snippet:
+        return RUNNING_SUMMARY.get(session_id, "")
+    existing = RUNNING_SUMMARY.get(session_id)
+    combined = snippet if not existing else f"{existing}\n{snippet}".strip()
+    RUNNING_SUMMARY[session_id] = combined
+    append_session_event(
+        session_id,
+        {
+            "ts": time.time(),
+            "type": "running.summary.updated",
+            "update": snippet,
+            "summary": combined,
+        },
+    )
+    return combined
+
+
+def get_running_summary(session_id: str) -> str:
+    return RUNNING_SUMMARY.get(session_id, "")
+
+
+_COMPLEXITY_SCALE = ["O(n)", "O(n log n)", "O(n^2)"]
+_COMPLEXITY_INDEX = {value: idx for idx, value in enumerate(_COMPLEXITY_SCALE)}
+
+
+def infer_expected_complexity(rating: int, tags: List[str]) -> str:
+    lowered = {tag.lower() for tag in tags}
+    if any("sort" in tag for tag in lowered):
+        return "O(n log n)"
+    if any("binary" in tag and "search" in tag for tag in lowered):
+        return "O(n log n)"
+    if any("two pointer" in tag or "two-pointers" in tag for tag in lowered):
+        return "O(n)"
+    if any(tag in lowered for tag in {"hash", "hashing", "map", "set", "dictionary"}):
+        return "O(n)"
+    if rating <= 900:
+        return "O(n^2)"
+    if rating >= 1300:
+        return "O(n log n)"
+    return "O(n)"
+
+
+def closeness_from_complexity(expected: str, observed: str) -> float:
+    expected_idx = _COMPLEXITY_INDEX.get(expected)
+    observed_idx = _COMPLEXITY_INDEX.get(observed)
+    if expected_idx is None:
+        return 0.5
+    if observed_idx is None:
+        return 0.5
+    diff = observed_idx - expected_idx
+    if diff <= 0:
+        return 1.0
+    if diff == 1:
+        return 0.6
+    return 0.3
 
 
 def append_session_event(session_id: str, event: Dict[str, Any]) -> None:
@@ -203,6 +307,9 @@ async def broadcast_snapshot_event(session_id: str, payload: Dict[str, Any]) -> 
 snapshot_service = SnapshotService(
     logger_append_fn=append_session_event,
     ws_broadcast_fn=broadcast_snapshot_event,
+    analyzer_enabled=settings.ANALYZER_ENABLED,
+    hint_window_seconds=settings.HINT_WINDOW_SECONDS,
+    store_full_source=settings.SNAPSHOTS_STORE_FULL,
 )
 
 orchestrator = Orchestrator(
@@ -252,6 +359,138 @@ def log_agent_silence(session_id: str, reason: str) -> None:
     )
 
 
+async def emit_agent_question(
+    event_type: str,
+    session_id: str,
+    *,
+    text: str,
+    category: str,
+    reason: str,
+) -> None:
+    event = {
+        "ts": time.time(),
+        "type": event_type,
+        "text": text,
+        "category": category,
+        "reason": reason,
+    }
+    append_session_event(session_id, event)
+    if settings.WS_ENABLED:
+        await ws_hub.broadcast(
+            session_id,
+            {
+                "type": event_type,
+                "session_id": session_id,
+                "text": text,
+                "category": category,
+                "reason": reason,
+            },
+        )
+
+
+class AgentActionRegistry:
+    """Executes AgentOut actions, respecting orchestration rules."""
+
+    def __init__(self, orchestrator_service: Orchestrator, templates: TemplatesService) -> None:
+        self._orchestrator = orchestrator_service
+        self._templates = templates
+
+    async def execute(self, payload: AgentInPayload, decision: AgentOutPayload) -> AgentOutPayload:
+        session_id = payload.session_id
+        now = time.time()
+        requested_action = decision.action
+        final_action = requested_action
+
+        if payload.speak_gate == "hold" and requested_action not in {"stay_silent", "present_problem"}:
+            final_action = "stay_silent"
+
+        if not self._orchestrator.can_execute_agent_action(session_id, final_action, now):
+            final_action = "stay_silent"
+
+        executed = decision.copy(update={"action": final_action})
+        append_session_event(
+            session_id,
+            {
+                "ts": now,
+                "type": "agent.action",
+                "requested": decision.dict(),
+                "executed": executed.dict(),
+            },
+        )
+
+        if final_action == "present_problem":
+            payload_tags = executed.desired_tags or None
+            next_rating = executed.next_rating
+            await self._orchestrator.present_problem(
+                session_id,
+                rating=next_rating,
+                tags=payload_tags,
+                broadcast=True,
+            )
+            self._templates.increment(session_id, "coding")
+            self._orchestrator.register_agent_action(session_id, "present_problem", now)
+            return executed
+
+        if final_action == "send_message":
+            text = executed.text or "Let me know how it's going."
+            await emit_agent_event(
+                "agent.message",
+                session_id,
+                text=text,
+                level="plain",
+                reason="main_agent",
+            )
+            self._orchestrator.register_agent_action(session_id, "send_message", now)
+            return executed.copy(update={"text": text})
+
+        if final_action == "give_hint":
+            level = executed.hint_level or "guide"
+            text = executed.text or "Try restating the problem in your own words and outline the data structures you need."
+            await emit_agent_event(
+                "agent.hint",
+                session_id,
+                text=text,
+                level=level,
+                reason="main_agent",
+            )
+            snapshot_service.record_hint(session_id, text, level, now)
+            self._orchestrator.register_agent_action(session_id, "give_hint", now)
+            return executed.copy(update={"text": text, "hint_level": level})
+
+        if final_action == "ask_hr":
+            question = self._templates.sample_hr()
+            await emit_agent_question(
+                "agent.hr",
+                session_id,
+                text=question.text,
+                category=question.category or "general",
+                reason="main_agent",
+            )
+            self._templates.increment(session_id, "hr")
+            self._orchestrator.register_agent_action(session_id, "ask_hr", now)
+            return executed.copy(update={"text": question.text})
+
+        if final_action == "ask_aptitude":
+            question = self._templates.sample_aptitude()
+            await emit_agent_question(
+                "agent.aptitude",
+                session_id,
+                text=question.text,
+                category=question.category or "general",
+                reason="main_agent",
+            )
+            self._templates.increment(session_id, "aptitude")
+            self._orchestrator.register_agent_action(session_id, "ask_aptitude", now)
+            return executed.copy(update={"text": question.text})
+
+        log_agent_silence(session_id, "main_agent")
+        self._orchestrator.register_agent_action(session_id, "stay_silent", now)
+        return executed.copy(update={"text": "", "hint_level": None})
+
+
+action_registry = AgentActionRegistry(orchestrator, templates_service)
+
+
 def read_session_events(session_id: str) -> List[Dict[str, Any]]:
     path = SESSIONS_DIR / f"{session_id}.jsonl"
     if not path.exists():
@@ -280,6 +519,7 @@ async def execute_decision(session_id: str, decision: Decision) -> List[Dict[str
                 problem_id=action.data.get("problem_id"),
                 broadcast=action.data.get("broadcast", True),
             )
+            templates_service.increment(session_id, "coding")
             executed.append({
                 "action": action.dict(),
                 "payload": payload.dict(),
@@ -305,7 +545,30 @@ async def execute_decision(session_id: str, decision: Decision) -> List[Dict[str
                 level=level,
                 reason=action.reason,
             )
+            snapshot_service.record_hint(session_id, text, level, time.time())
             executed.append({"action": action.dict()})
+        elif action.type == "ask_hr":
+            question = templates_service.sample_hr()
+            await emit_agent_question(
+                "agent.hr",
+                session_id,
+                text=question.text,
+                category=question.category or "general",
+                reason=action.reason,
+            )
+            templates_service.increment(session_id, "hr")
+            executed.append({"action": action.dict(), "question": question.dict()})
+        elif action.type == "ask_aptitude":
+            question = templates_service.sample_aptitude()
+            await emit_agent_question(
+                "agent.aptitude",
+                session_id,
+                text=question.text,
+                category=question.category or "general",
+                reason=action.reason,
+            )
+            templates_service.increment(session_id, "aptitude")
+            executed.append({"action": action.dict(), "question": question.dict()})
         elif action.type == "stay_silent":
             log_agent_silence(session_id, action.reason)
             executed.append({"action": action.dict()})
@@ -353,6 +616,7 @@ async def process_window(window: WindowPayload) -> MiniOutput:
 async def _startup() -> None:
     await mini_llm_service.start()
     await judge_service.start()
+    await main_agent_service.start()
     transcriber_service.set_window_consumer(process_window)
     transcriber_runner.set_chunk_logger(log_asr_chunk)
 
@@ -362,6 +626,7 @@ async def _shutdown() -> None:
     await transcriber_runner.stop_all()
     await mini_llm_service.close()
     await judge_service.close()
+    await main_agent_service.close()
 
 
 @app.get("/healthz", response_class=JSONResponse)
@@ -522,10 +787,39 @@ async def run_submission(request: RunRequest) -> ExecResult:
         )
     )
     try:
+        problem_dto = problem_service.get_problem(request.problem_id)
         samples = problem_service.get_samples(request.problem_id)
     except NoResultFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     result = await judge_service.run_python_cases(request.source, samples)
+    complexity_snapshot = snapshot_service.analyze_source(request.source)
+    closeness_correct = (result.passed / result.total) if result.total else 0.0
+    expected_complexity = infer_expected_complexity(problem_dto.rating, problem_dto.tags)
+    observed_complexity = complexity_snapshot.get("time", "unknown")
+    closeness_optimal = closeness_from_complexity(expected_complexity, observed_complexity)
+    case_times = [case.time_ms for case in result.cases if case.time_ms is not None]
+    if case_times:
+        observed_time = min(case_times)
+        best_time = BEST_PROBLEM_TIMES.get(problem_dto.id)
+        if best_time is None or observed_time < best_time:
+            BEST_PROBLEM_TIMES[problem_dto.id] = observed_time
+            best_time = observed_time
+        if best_time:
+            if observed_time <= best_time * 2:
+                closeness_optimal = min(1.0, closeness_optimal + 0.1)
+            else:
+                closeness_optimal = max(0.0, closeness_optimal - 0.1)
+    result.closeness_to_correct = round(closeness_correct, 3)
+    result.closeness_to_optimal = round(closeness_optimal, 3)
+    snapshot_service.set_pending_closeness(
+        request.session_id,
+        request.problem_id,
+        "python",
+        {
+            "closeness_to_correct": float(result.closeness_to_correct or 0.0),
+            "closeness_to_optimal": float(result.closeness_to_optimal or 0.0),
+        },
+    )
     result_dict = result.dict()
     result_ts = time.time()
     append_session_event(
@@ -549,6 +843,119 @@ async def run_submission(request: RunRequest) -> ExecResult:
     )
     await execute_decision(request.session_id, decision)
     return result
+
+
+@app.post("/agent/decide", response_model=AgentOutPayload)
+async def agent_decide(body: AgentInPayload) -> AgentOutPayload:
+    plan = templates_service.get_or_create_plan(body.session_id)
+    summary_text = get_running_summary(body.session_id)
+    enriched = body.copy(update={"plan_state": plan.dict(), "last_agent_summary": summary_text})
+    try:
+        agent_choice = await main_agent_service.decide(enriched)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.exception("Main agent call failed: %s", exc)
+        agent_choice = AgentOutPayload(action="stay_silent", text="")
+    executed = await action_registry.execute(enriched, agent_choice)
+    if executed.update_running_summary:
+        new_summary = append_running_summary(body.session_id, executed.update_running_summary)
+        executed = executed.copy(update={"update_running_summary": new_summary})
+    return executed
+
+
+@app.get("/agent/plan", response_model=InterviewPlan)
+async def agent_plan(session_id: str = Query(...)) -> InterviewPlan:
+    return templates_service.get_or_create_plan(session_id)
+
+
+@app.post("/agent/plan/reset", response_model=InterviewPlan)
+async def agent_plan_reset(body: AgentPlanRequest) -> InterviewPlan:
+    plan = templates_service.reset_plan(body.session_id)
+    RUNNING_SUMMARY.pop(body.session_id, None)
+    append_session_event(
+        body.session_id,
+        {
+            "ts": time.time(),
+            "type": "running.summary.updated",
+            "update": "reset",
+            "summary": "",
+        },
+    )
+    return plan
+
+
+@app.post("/agent/finalize", response_model=FinalEval)
+async def agent_finalize(body: AgentFinalizeRequest) -> FinalEval:
+    events = read_session_events(body.session_id)
+    closeness_correct: List[float] = []
+    closeness_optimal: List[float] = []
+    hints_given = 0
+    hints_followed = 0
+
+    for event in events:
+        event_type = event.get("type")
+        if event_type == "exec.result":
+            result = event.get("result", {})
+            cc = result.get("closeness_to_correct")
+            co = result.get("closeness_to_optimal")
+            if isinstance(cc, (int, float)):
+                closeness_correct.append(float(cc))
+            if isinstance(co, (int, float)):
+                closeness_optimal.append(float(co))
+        elif event_type == "agent.hint":
+            hints_given += 1
+        elif event_type == "diff.snapshot":
+            summary = event.get("summary", {})
+            if summary.get("hint_followed"):
+                hints_followed += 1
+
+    avg_correct = sum(closeness_correct) / len(closeness_correct) if closeness_correct else 0.0
+    avg_optimal = sum(closeness_optimal) / len(closeness_optimal) if closeness_optimal else 0.0
+    follow_rate = (hints_followed / hints_given) if hints_given else 0.0
+
+    problem_score = max(1.0, min(5.0, round(avg_correct * 5, 2)))
+    efficiency_score = max(1.0, min(5.0, round(avg_optimal * 5, 2)))
+    communication_score = 3.0
+    if get_running_summary(body.session_id):
+        communication_score += 0.5
+    if hints_given:
+        communication_score -= 0.5
+        communication_score += min(1.0, follow_rate * 2)
+    communication_score = max(1.0, min(5.0, round(communication_score, 2)))
+    readiness_score = round((problem_score + efficiency_score + communication_score) / 3, 2)
+
+    summary_text = get_running_summary(body.session_id)
+    parts: List[str] = []
+    if summary_text:
+        parts.append(summary_text)
+    parts.append(
+        f"Correctness closeness {avg_correct:.0%}, efficiency closeness {avg_optimal:.0%}."
+    )
+    if hints_given:
+        parts.append(f"Hints followed {hints_followed}/{hints_given}.")
+    else:
+        parts.append("No hints were needed.")
+    narrative = " ".join(parts)
+
+    final = FinalEval(
+        session_id=body.session_id,
+        scores={
+            "problem_solving": problem_score,
+            "efficiency": efficiency_score,
+            "communication": communication_score,
+            "readiness": readiness_score,
+        },
+        narrative=narrative,
+        running_summary=summary_text or None,
+    )
+    append_session_event(
+        body.session_id,
+        {
+            "ts": time.time(),
+            "type": "interview.final",
+            "payload": final.dict(),
+        },
+    )
+    return final
 
 
 # ------------------------ Orchestrator Endpoints -------------------------

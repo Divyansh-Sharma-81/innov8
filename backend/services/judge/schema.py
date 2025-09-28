@@ -28,3 +28,5 @@ class ExecResult(BaseModel):
     cases: List[ExecCaseResult]
     stderr: Optional[str] = None
     mock: bool = False
+    closeness_to_correct: Optional[float] = None
+    closeness_to_optimal: Optional[float] = None

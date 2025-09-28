@@ -50,6 +50,47 @@ class Orchestrator:
         self._log_state(event.session_id, snapshot)
         return Decision(actions=actions, updated_state=snapshot)
 
+    def can_execute_agent_action(self, session_id: str, action_type: str, now: Optional[float] = None) -> bool:
+        now_value = now or self._clock()
+        state = self._ensure_state(session_id, now_value)
+        action = action_type.lower()
+        speak_gate = state.get("speak_gate", "ok")
+        if action not in {"stay_silent", "present_problem"} and speak_gate == "hold":
+            return False
+        reference_ts_map = {
+            "send_message": state.get("last_message_ts", 0.0),
+            "give_hint": state.get("last_hint_ts", 0.0),
+            "ask_hr": state.get("last_hr_ts", state.get("last_message_ts", 0.0)),
+            "ask_aptitude": state.get("last_apt_ts", state.get("last_message_ts", 0.0)),
+        }
+        cooldown_map = {
+            "send_message": self.config.chat_cooldown_s,
+            "give_hint": self.config.hint_cooldown_s,
+            "ask_hr": self.config.chat_cooldown_s,
+            "ask_aptitude": self.config.chat_cooldown_s,
+        }
+        if action in reference_ts_map:
+            last_ts = float(reference_ts_map[action] or 0.0)
+            cooldown = cooldown_map[action]
+            return self._cooldown_passed(now_value, last_ts, cooldown)
+        return True
+
+    def register_agent_action(self, session_id: str, action_type: str, ts: Optional[float] = None) -> None:
+        now_value = ts or self._clock()
+        state = self._ensure_state(session_id, now_value)
+        action = action_type.lower()
+        if action == "send_message":
+            state["last_message_ts"] = now_value
+        elif action == "give_hint":
+            state["last_hint_ts"] = now_value
+        elif action == "ask_hr":
+            state["last_hr_ts"] = now_value
+            state["last_message_ts"] = now_value
+        elif action == "ask_aptitude":
+            state["last_apt_ts"] = now_value
+            state["last_message_ts"] = now_value
+        state["last_action_ts"] = now_value
+
     async def present_problem(
         self,
         session_id: str,
@@ -283,6 +324,8 @@ class Orchestrator:
                 "last_action_ts": 0.0,
                 "last_hint_ts": 0.0,
                 "last_message_ts": 0.0,
+                "last_hr_ts": 0.0,
+                "last_apt_ts": 0.0,
                 "current_problem_id": None,
                 "verdict_score": 0.5,
                 "consecutive_fail": 0,

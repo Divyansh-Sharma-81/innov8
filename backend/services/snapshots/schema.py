@@ -23,6 +23,9 @@ class DiffSummary(BaseModel):
     removed: int
     hunks: int
     funcs_touched: List[str]
+    complexity_analysis: Optional[Dict[str, str]] = None
+    closeness: Optional[Dict[str, float]] = None
+    hint_followed: Optional[bool] = None
 
 
 class SnapshotOut(BaseModel):
@@ -36,7 +39,21 @@ class SnapshotOut(BaseModel):
 
 class TimelineQuery(BaseModel):
     session_id: str
-    kind: Literal["any", "diff.snapshot", "exec.result", "problem.presented", "mini.tag"] = "any"
+    kind: Literal[
+        "any",
+        "diff.snapshot",
+        "exec.result",
+        "problem.presented",
+        "mini.tag",
+        "agent.message",
+        "agent.hint",
+        "agent.hr",
+        "agent.aptitude",
+        "agent.stay_silent",
+        "agent.action",
+        "running.summary.updated",
+        "interview.final",
+    ] = "any"
     offset: int = 0
     limit: int = 100
 
